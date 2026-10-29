@@ -310,14 +310,13 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void enableTwoFingerCustomizationGesture() {
-    final android.os.Handler handler =
+    private final android.os.Handler gestureHandler =
         new android.os.Handler(android.os.Looper.getMainLooper());
 
-    final boolean[] triggered = {false};
-    final Runnable openCustomization = () -> {
-        triggered[0] = true;
+    private boolean twoFingerGestureTriggered = false;
 
+    private final Runnable openCustomization = () -> {
+        twoFingerGestureTriggered = true;
         new AlertDialog.Builder(this)
             .setTitle("Personalizza Home")
             .setItems(new String[]{
@@ -325,10 +324,10 @@ public class MainActivity extends Activity {
                 "Impostazioni launcher"
             }, (dialog, which) -> {
                 if (which == 0) {
-                    Intent intent = new Intent(
-                        Intent.ACTION_SET_WALLPAPER);
-                    startActivity(
-                        Intent.createChooser(intent, "Scegli sfondo"));
+                    Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                    intent.setType("image/*");
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    startActivityForResult(Intent.createChooser(intent, "Scegli immagine"), 7001);
                 } else {
                     openHomeSettings();
                 }
@@ -337,24 +336,56 @@ public class MainActivity extends Activity {
             .show();
     };
 
-    root.setOnTouchListener((view, event) -> {
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode != 7001 || resultCode != Activity.RESULT_OK
+                || data == null || data.getData() == null) {
+            return;
+        }
+
+        try {
+            Intent wallpaperIntent = new Intent(Intent.ACTION_ATTACH_DATA);
+            wallpaperIntent.setDataAndType(data.getData(), "image/*");
+            wallpaperIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            wallpaperIntent.setPackage("org.lineageos.glimpse");
+            startActivity(wallpaperIntent);
+        } catch (Exception e) {
+            android.widget.Toast.makeText(
+                    this,
+                    "Impossibile aprire Glimpse: " + e.getMessage(),
+                    android.widget.Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
+    private void enableTwoFingerCustomizationGesture() {
+        // Gli eventi vengono rilevati a livello dell'intera finestra.
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
         switch (event.getActionMasked()) {
-            case android.view.MotionEvent.ACTION_POINTER_DOWN:
-                if (event.getPointerCount() >= 2) {
-                    triggered[0] = false;
-                    handler.postDelayed(openCustomization, 1000);
+            case MotionEvent.ACTION_POINTER_DOWN:
+                if (event.getPointerCount() == 2) {
+                    twoFingerGestureTriggered = false;
+                    gestureHandler.removeCallbacks(openCustomization);
+                    gestureHandler.postDelayed(openCustomization, 1000);
+                } else {
+                    gestureHandler.removeCallbacks(openCustomization);
                 }
                 break;
 
-            case android.view.MotionEvent.ACTION_POINTER_UP:
-            case android.view.MotionEvent.ACTION_UP:
-            case android.view.MotionEvent.ACTION_CANCEL:
-                handler.removeCallbacks(openCustomization);
+            case MotionEvent.ACTION_POINTER_UP:
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                gestureHandler.removeCallbacks(openCustomization);
                 break;
         }
-        return false;
-    });
-}
+        return super.dispatchTouchEvent(event);
+    }
+
      private void showApps(String filter) {
         if (appGridContainer == null) return;
         appGridContainer.removeAllViews();
